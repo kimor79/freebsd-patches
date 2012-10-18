@@ -45,6 +45,7 @@ load_database(old_db)
 	DIR		*dir;
 	struct stat	statbuf;
 	struct stat	syscron_stat;
+	struct stat	crond_stat;
 	DIR_T   	*dp;
 	cron_db		new_db;
 	user		*u, *nu;
@@ -60,6 +61,11 @@ load_database(old_db)
 		(void) exit(ERROR_EXIT);
 	}
 
+	if (stat(CROND_DIR, &crond_stat) < OK) {
+		log_it("CRON", getpid(), "STAT FAILED", CROND_DIR);
+		(void) exit(ERROR_EXIT);
+	}
+
 	/* track system crontab file
 	 */
 	if (stat(SYSCRONTAB, &syscron_stat) < OK)
@@ -72,7 +78,8 @@ load_database(old_db)
 	 * so is guaranteed to be different than the stat() mtime the first
 	 * time this function is called.
 	 */
-	if (old_db->mtime == TMAX(statbuf.st_mtime, syscron_stat.st_mtime)) {
+	if (old_db->mtime == TMAX(crond_stat.st_mtime,
+			TMAX(statbuf.st_mtime, syscron_stat.st_mtime))) {
 		Debug(DLOAD, ("[%d] spool dir mtime unch, no load needed.\n",
 			      getpid()))
 		return;
@@ -83,7 +90,8 @@ load_database(old_db)
 	 * actually changed.  Whatever is left in the old database when
 	 * we're done is chaff -- crontabs that disappeared.
 	 */
-	new_db.mtime = TMAX(statbuf.st_mtime, syscron_stat.st_mtime);
+	new_db.mtime = TMAX(crond_stat.st_mtime,
+		TMAX(statbuf.st_mtime, syscron_stat.st_mtime));
 	new_db.head = new_db.tail = NULL;
 
 	if (syscron_stat.st_mtime) {
@@ -91,6 +99,34 @@ load_database(old_db)
 				SYSCRONTAB, &syscron_stat,
 				&new_db, old_db);
 	}
+
+	if (!(dir = opendir(CROND_DIR))) {
+		log_it("CRON", getpid(), "OPENDIR FAILED", CROND_DIR);
+		(void) exit(ERROR_EXIT);
+	}
+
+	while (NULL != (dp = readdir(dir))) {
+		char	fname[MAXNAMLEN+1],
+			tabname[MAXNAMLEN+1];
+
+		/* avoid file names beginning with ".".  this is good
+		 * because we would otherwise waste two guaranteed calls
+		 * to getpwnam() for . and .., and also because user names
+		 * starting with a period are just too nasty to consider.
+		 */
+		if (dp->d_name[0] == '.')
+			continue;
+
+		(void) strncpy(fname, dp->d_name, sizeof(fname));
+		fname[sizeof(fname)-1] = '\0';
+		(void) snprintf(tabname, MAXNAMLEN+1, "%s/%s",
+			CROND_DIR, fname);
+
+		process_crontab("root", SYS_NAME,
+				tabname, &crond_stat,
+				&new_db, old_db);
+	}
+	closedir(dir);
 
 	/* we used to keep this dir open all the time, for the sake of
 	 * efficiency.  however, we need to close it in every fork, and

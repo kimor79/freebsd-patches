@@ -41,6 +41,8 @@
 			 */
 #define SPOOL_DIR	"tabs"
 
+#define CROND_DIR	"/etc/cron.d"
+
 			/* undefining these turns off their features.  note
 			 * that ALLOW_FILE and DENY_FILE must both be defined
 			 * in order to enable the allow/deny code.  If neither

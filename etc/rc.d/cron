@@ -15,6 +15,14 @@ rcvar="`set_rcvar`"
 command="/usr/sbin/${name}"
 pidfile="/var/run/${name}.pid"
 
+start_precmd=cron_prestart
+
+cron_prestart() {
+	if [ ! -d /etc/cron.d ]; then
+		mkdir /etc/cron.d
+	fi
+}
+
 load_rc_config $name
 if checkyesno cron_dst
 then
